@@ -68,7 +68,7 @@ export const AUTH_CONFIG = {
   AUTHORIZE_URL: "https://esignet.id.assembly.govstack.global/authorize",
   CLIENT_ID: "Liquio",
   SCOPE: "mosip_identity_vc_ldp",
-  REDIRECT_URI: "https://v0-digital-liquio-ui.vercel.app/redirect",
+  REDIRECT_URI: "http://localhost:3000/redirect",
   UI_LOCALES: "en",
   RESPONSE_TYPE: "code",
   CODE_CHALLENGE_METHOD: "S256",
