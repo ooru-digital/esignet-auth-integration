@@ -157,6 +157,56 @@ npm run dev
 ## API Flow
 
 ### 1. Authorization Flow (PKCE OAuth 2.0)
+Detailed Authorization URL with Real Example
+
+Here’s exactly what happens when you click “Authorize with eSignet”:
+
+Step 1: Generate PKCE Parameters
+
+Your app generates these values using cryptography.
+This code runs in your browser when you click the button (from lib/pkce.ts):
+
+```
+// Generate Code Verifier (128 random characters)
+const codeVerifier = generateRandomString(128)
+// Example result:
+// "_M.x1OQ9oBy9UWClTLo97p0jpBAOfKTx.uNNbkwLDMLc7e9f_example_verifier_128_chars_long"
+
+// Generate State (32 random characters)
+const state = generateRandomString(32)
+// Example result:
+// "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
+
+// Generate Code Challenge (SHA-256 hash of the Verifier)
+const codeChallenge = await generateCodeChallenge(codeVerifier)
+// Example result:
+// "0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4"
+```
+
+How generateCodeChallenge Works
+```
+// Takes the 128-character verifier and:
+
+// 1. Converts it to bytes
+const data = encoder.encode(codeVerifier)
+
+// 2. Applies SHA-256 hash (one-way mathematical function)
+const digest = await crypto.subtle.digest("SHA-256", data)
+
+// 3. Converts hash to URL-safe Base64 format
+const base64 = btoa(String.fromCharCode(...new Uint8Array(digest)))
+const codeChallenge = base64
+  .replace(/\+/g, "-")
+  .replace(/\//g, "_")
+  .replace(/=/g, "")
+// Result: 44-character string like "0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4"
+```
+
+Result:
+A 43–44 character Base64URL-encoded string (the code_challenge), for example:
+
+```0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4```
+
 
 ```
 User clicks "Authorize with eSignet"
