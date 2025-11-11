@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { DOWNLOAD_CONFIG, API_CONFIG, AUTH_CONFIG } from "@/lib/config"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,24 +13,23 @@ export async function POST(request: NextRequest) {
     }
 
     const requestBody = new URLSearchParams({
-      grant_type: "authorization_code",
+      grant_type: DOWNLOAD_CONFIG.GRANT_TYPE,
       code: code,
-      // redirect_uri: "https://v0-digital-liquio-ui.vercel.app/redirect",
-      redirect_uri: "http://localhost:3000/redirect",
+      redirect_uri: AUTH_CONFIG.REDIRECT_URI,
       code_verifier: code_verifier,
-      issuer: "Digital Liquio",
-      credential: "NationalIDCredential",
-      vcStorageExpiryLimitInTimes: "1",
-      locale: "en",
+      issuer: DOWNLOAD_CONFIG.ISSUER,
+      credential: DOWNLOAD_CONFIG.CREDENTIAL_TYPE,
+      vcStorageExpiryLimitInTimes: DOWNLOAD_CONFIG.VC_STORAGE_EXPIRY_LIMIT,
+      locale: DOWNLOAD_CONFIG.LOCALE,
     })
 
-    const response = await fetch("https://injiweb.id.assembly.govstack.global/v1/mimoto/credentials/download", {
+    const response = await fetch(DOWNLOAD_CONFIG.DOWNLOAD_URL, {
       method: "POST",
       headers: {
-        accept: "application/pdf",
-        "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "cache-control": "no-cache, no-store, must-revalidate",
-        "content-type": "application/x-www-form-urlencoded",
+        accept: API_CONFIG.ACCEPT,
+        "accept-language": API_CONFIG.ACCEPT_LANGUAGE,
+        "cache-control": API_CONFIG.CACHE_CONTROL,
+        "content-type": API_CONFIG.CONTENT_TYPE,
         pragma: "no-cache",
       },
       body: requestBody.toString(),
@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
 
     return new NextResponse(arrayBuffer, {
       headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": "attachment; filename=NationalIDCredential.pdf",
+        "Content-Type": API_CONFIG.ACCEPT,
+        "Content-Disposition": `attachment; filename=${DOWNLOAD_CONFIG.FILENAME}`,
       },
     })
   } catch (error) {

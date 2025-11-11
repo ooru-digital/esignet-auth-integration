@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { generatePKCE } from "@/lib/pkce"
+import { AUTH_CONFIG } from "@/lib/config"
 
 interface CredentialTemplateProps {
   issuer: any
@@ -9,8 +10,8 @@ interface CredentialTemplateProps {
 }
 
 export default function CredentialTemplate({ issuer, onClose }: CredentialTemplateProps) {
-  const [selectedCredential, setSelectedCredential] = useState(issuer.credentials[0])
   const [isLoading, setIsLoading] = useState(false)
+  const credential = issuer.credentials[0]
 
   const handleAuthorize = async () => {
     setIsLoading(true)
@@ -21,18 +22,15 @@ export default function CredentialTemplate({ issuer, onClose }: CredentialTempla
       sessionStorage.setItem("pkce_code_verifier", codeVerifier)
       sessionStorage.setItem("pkce_state", state)
 
-      // const redirectUri = "https://v0-digital-liquio-ui.vercel.app/redirect"
-      const redirectUri = "http://localhost:3000/redirect"
-      const authorizeUrl = new URL("https://esignet.id.assembly.govstack.global/authorize")
-
-      authorizeUrl.searchParams.append("response_type", "code")
-      authorizeUrl.searchParams.append("client_id", "Liquio")
-      authorizeUrl.searchParams.append("scope", "mosip_identity_vc_ldp")
-      authorizeUrl.searchParams.append("redirect_uri", redirectUri)
+      const authorizeUrl = new URL(AUTH_CONFIG.AUTHORIZE_URL)
+      authorizeUrl.searchParams.append("response_type", AUTH_CONFIG.RESPONSE_TYPE)
+      authorizeUrl.searchParams.append("client_id", AUTH_CONFIG.CLIENT_ID)
+      authorizeUrl.searchParams.append("scope", AUTH_CONFIG.SCOPE)
+      authorizeUrl.searchParams.append("redirect_uri", AUTH_CONFIG.REDIRECT_URI)
       authorizeUrl.searchParams.append("state", state)
       authorizeUrl.searchParams.append("code_challenge", codeChallenge)
-      authorizeUrl.searchParams.append("code_challenge_method", "S256")
-      authorizeUrl.searchParams.append("ui_locales", "en")
+      authorizeUrl.searchParams.append("code_challenge_method", AUTH_CONFIG.CODE_CHALLENGE_METHOD)
+      authorizeUrl.searchParams.append("ui_locales", AUTH_CONFIG.UI_LOCALES)
 
       console.log("[v0] Redirecting to eSignet authorize:", authorizeUrl.toString())
       window.location.href = authorizeUrl.toString()
@@ -53,12 +51,11 @@ export default function CredentialTemplate({ issuer, onClose }: CredentialTempla
       />
 
       {/* Modal */}
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 transform rounded-xl bg-white shadow-2xl">
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform rounded-xl bg-white shadow-2xl">
         {/* Header */}
         <div className="border-b border-slate-200 bg-gradient-to-r from-blue-50 to-cyan-50 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-900">{issuer.name}</h2>
-            <p className="mt-1 text-sm text-slate-600">Select a credential template to view details</p>
           </div>
           <button
             onClick={onClose}
@@ -71,47 +68,19 @@ export default function CredentialTemplate({ issuer, onClose }: CredentialTempla
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6">
-          {/* Credential List */}
-          <div className="mb-6 space-y-2">
-            {issuer.credentials.map((credential: any, index: number) => (
-              <button
-                key={index}
-                onClick={() => setSelectedCredential(credential)}
-                className={`w-full rounded-lg border-2 p-4 text-left transition-all ${
-                  selectedCredential === credential
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-slate-200 bg-white hover:border-slate-300"
-                }`}
-              >
-                <h4 className="font-semibold text-slate-900">{credential.name}</h4>
-                <p className="mt-1 text-sm text-slate-600">{credential.description}</p>
-              </button>
-            ))}
+          {/* Credential Logo */}
+          <div className="mb-6 flex flex-col items-center">
+            {credential?.logo && (
+              <img
+                src={credential.logo || "/placeholder.svg"}
+                alt={credential.name}
+                className="h-32 w-32 object-contain"
+              />
+            )}
+            <h3 className="mt-4 text-lg font-bold text-slate-900 text-center">{credential?.name}</h3>
+            <p className="mt-2 text-sm text-slate-600 text-center">{credential?.description}</p>
           </div>
-
-          {/* Selected Credential Details */}
-          {selectedCredential && (
-            <div className="rounded-lg bg-slate-50 p-4">
-              <h3 className="mb-4 font-semibold text-slate-900">Template Fields</h3>
-              <div className="space-y-3">
-                {selectedCredential.fields.map((field: string, index: number) => (
-                  <div key={index} className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
-                      <span className="text-xs font-bold text-white">{index + 1}</span>
-                    </div>
-                    <input
-                      type="text"
-                      placeholder={field}
-                      className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      readOnly
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}

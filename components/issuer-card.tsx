@@ -18,9 +18,12 @@ export default function IssuerCard({ issuer, onClick }: IssuerCardProps) {
 
       {/* Content */}
       <div className="relative z-10">
-        {/* Icon */}
-        <div className="mb-4 inline-flex items-center justify-center rounded-lg bg-blue-50 p-3">
-          <span className="text-2xl">{issuer.icon}</span>
+        <div className="mb-4">
+          <img
+            src={issuer.logo || "/placeholder.svg"}
+            alt={issuer.name}
+            className="h-16 w-16 object-contain rounded-lg"
+          />
         </div>
 
         {/* Title and Description */}

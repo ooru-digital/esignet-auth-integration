@@ -7,21 +7,15 @@ export default function RedirectPage() {
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [authCode, setAuthCode] = useState<string | null>(null)
 
   useEffect(() => {
     const code = searchParams.get("code")
-    const state = searchParams.get("state")
-
-    console.log("[v0] Redirect received - Code:", code, "State:", state)
 
     if (!code) {
       setError("No authorization code received from eSignet")
       setLoading(false)
       return
     }
-
-    setAuthCode(code)
 
     const downloadCredentials = async () => {
       try {
@@ -37,7 +31,6 @@ export default function RedirectPage() {
           },
           body: JSON.stringify({
             code: code,
-            state: state,
             code_verifier: codeVerifier,
           }),
         })
@@ -96,7 +89,7 @@ export default function RedirectPage() {
           </div>
         )}
 
-        {!loading && !error && authCode && (
+        {!loading && !error && (
           <div className="space-y-6">
             <div className="rounded-lg bg-white p-6 shadow-lg">
               <div className="mb-4 flex items-center gap-3">
@@ -110,19 +103,6 @@ export default function RedirectPage() {
                   <p className="text-slate-600">Your NationalIDCredential PDF has been downloaded</p>
                 </div>
               </div>
-            </div>
-
-            <div className="rounded-lg bg-blue-50 p-6 border border-blue-200">
-              <h3 className="font-semibold text-slate-900 mb-3">Authorization Code</h3>
-              <div className="rounded bg-white p-3 font-mono text-sm break-all text-slate-700 border border-blue-200">
-                {authCode}
-              </div>
-              <button
-                onClick={() => navigator.clipboard.writeText(authCode)}
-                className="mt-3 rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
-              >
-                Copy Code
-              </button>
             </div>
 
             <a
