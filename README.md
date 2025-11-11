@@ -23,10 +23,10 @@ This application provides a user-friendly interface for:
 
 ### Verify Installation
 
-\`\`\`bash
+```
 node --version
 npm --version
-\`\`\`
+```
 
 ---
 
@@ -34,24 +34,24 @@ npm --version
 
 ### 1. Clone or Download the Project
 
-\`\`\`bash
+```
 git clone <repository-url>
 cd esignet-auth-integration
-\`\`\`
+```
 
 ### 2. Install Dependencies
 
-\`\`\`bash
+```
 npm install --legacy-peer-deps
-\`\`\`
+```
 
 The `--legacy-peer-deps` flag is required due to React 19.2.0 compatibility with some packages.
 
 ### 3. Verify Installation
 
-\`\`\`bash
+```
 npm run build
-\`\`\`
+```
 
 If the build succeeds, you're ready to proceed.
 
@@ -63,7 +63,7 @@ All application configuration is centralized in `lib/config.ts`. This file conta
 
 ### AUTH_CONFIG - eSignet Authorization
 
-\`\`\`typescript
+```
 export const AUTH_CONFIG = {
   AUTHORIZE_URL: "https://esignet.id.assembly.govstack.global/authorize",
   CLIENT_ID: "Liquio",
@@ -73,7 +73,7 @@ export const AUTH_CONFIG = {
   RESPONSE_TYPE: "code",
   CODE_CHALLENGE_METHOD: "S256",
 }
-\`\`\`
+```
 
 **Parameters:**
 - `AUTHORIZE_URL`: eSignet's OAuth authorization endpoint
@@ -86,7 +86,7 @@ export const AUTH_CONFIG = {
 
 ### DOWNLOAD_CONFIG - Mimoto Credential Download
 
-\`\`\`typescript
+```
 export const DOWNLOAD_CONFIG = {
   DOWNLOAD_URL: "https://injiweb.id.assembly.govstack.global/v1/mimoto/credentials/download",
   GRANT_TYPE: "authorization_code",
@@ -96,7 +96,7 @@ export const DOWNLOAD_CONFIG = {
   LOCALE: "en",
   FILENAME: "NationalIDCredential.pdf",
 }
-\`\`\`
+```
 
 **Parameters:**
 - `DOWNLOAD_URL`: Mimoto credential download endpoint
@@ -113,14 +113,14 @@ export const DOWNLOAD_CONFIG = {
 
 ### Start Development Server
 
-\`\`\`bash
+```
 npm run dev
-\`\`\`
+```
 
 The application will be available at:
-\`\`\`
+```
 http://localhost:3000
-\`\`\`
+```
 
 ### Verify It's Running
 
@@ -141,16 +141,16 @@ http://localhost:3000
 ### Troubleshooting
 
 **Port 3000 already in use:**
-\`\`\`bash
+```
 npm run dev -- -p 3001
-\`\`\`
+```
 
 **Dependencies issues:**
-\`\`\`bash
+```
 rm -rf node_modules package-lock.json
 npm install --legacy-peer-deps
 npm run dev
-\`\`\`
+```
 
 ---
 
@@ -158,7 +158,7 @@ npm run dev
 
 ### 1. Authorization Flow (PKCE OAuth 2.0)
 
-\`\`\`
+```
 User clicks "Authorize with eSignet"
     ↓
 Generate PKCE parameters (code_verifier, code_challenge, state)
@@ -175,11 +175,11 @@ User authenticates at eSignet
     ↓
 eSignet redirects back with authorization code:
     https://your-domain.com/redirect?code=[auth_code]&state=[state]
-\`\`\`
+```
 
 ### 2. Credential Download Flow
 
-\`\`\`
+```
 Redirect page captures authorization code
     ↓
 Calls /api/credentials/download with:
@@ -195,6 +195,6 @@ Server calls Mimoto API:
 Mimoto validates and returns PDF credential
     ↓
 Browser automatically downloads PDF file
-\`\`\`
+```
 
 ---
