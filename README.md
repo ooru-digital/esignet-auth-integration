@@ -217,7 +217,7 @@ Redirect to: https://esignet.id.assembly.govstack.global/authorize?
     - client_id=Liquio
     - scope=mosip_identity_vc_ldp
     - redirect_uri=https://your-domain.com/redirect
-    - state=[random_state]
+    - state=[state]
     - code_challenge=[SHA256_hash]
     - code_challenge_method=S256
     ↓
