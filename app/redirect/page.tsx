@@ -54,7 +54,7 @@ export default function RedirectPage() {
         if (!response.ok) throw new Error(data.error || `Request failed: ${response.status}`)
 
         saveProfile(data.userInfo)
-        router.replace("/")
+        router.replace("/?login=success")
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch user details from eSignet")
       }

@@ -41,37 +41,18 @@ export const DOWNLOAD_CONFIG = {
   FILENAME: "NationalIDCredential.pdf",
 }
 
-export const OPENID4VP_CONFIG = {
-  // Scheme the wallet app is registered to handle when scanning the QR code
-  REQUEST_SCHEME: "openid4vp://authorize",
-  CLIENT_ID_SCHEME: "redirect_uri",
-  RESPONSE_TYPE: "vp_token",
-  RESPONSE_MODE: "direct_post",
-  // Must be reachable from the phone running the wallet; falls back to the origin the app was opened on
-  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "",
-  RESPONSE_PATH: "/api/openid4vp/response",
-  SESSION_TTL_MS: 5 * 60 * 1000,
-  // Inji Wallet rejects client_metadata without vp_formats, and any empty string value (e.g. logo_uri: "")
-  CLIENT_METADATA: {
-    client_name: "Login with National ID",
-    vp_formats: {
-      ldp_vp: { proof_type: ["Ed25519Signature2018", "Ed25519Signature2020", "RsaSignature2018"] },
-    },
-  },
-  PRESENTATION_DEFINITION: {
-    id: "vp-token-example",
-    format: { ldp_vc: { proof_type: ["Ed25519Signature2020"] } },
-    purpose: "Relying party is requesting your digital ID for the purpose of Self-Authentication",
-    client_metadata: { logo_uri: "", client_name: "Login with National ID" },
-    input_descriptors: [
-      {
-        id: "id-card-credential",
-        format: { ldp_vc: { proof_type: ["Ed25519Signature2020"] } },
-        constraints: {
-          fields: [{ path: ["$.type[?(@ == 'NationalIDCredential')]"] }],
-        },
-      },
-    ],
+export const CREDISSUER_CONFIG = {
+  // Creates a wallet presentation request; returns { base64qrcode, response_uri }
+  PRESENTATION_URL:
+    process.env.CREDISSUER_PRESENTATION_URL || "https://api.credissuer.com/api/verifier/vp/presentation/12",
+  // Only response_uri values under this prefix are polled (stops the status route fetching arbitrary URLs)
+  RESPONSE_URI_PREFIX: "https://api.credissuer.com/api/verifier/vp/presentation/",
+  // CredIssuer only answers requests that look like they come from its verifier site
+  HEADERS: {
+    Accept: "*/*",
+    "Accept-Language": "en",
+    Origin: "https://staging-verify.credissuer.com",
+    Referer: "https://staging-verify.credissuer.com/",
   },
 }
 

@@ -22,6 +22,21 @@ import {
 
 const HIDDEN_FIELDS = new Set(["id", "photo", "face", "picture"])
 
+export function ProfileDetails({ profile, className = "" }: { profile: Profile; className?: string }) {
+  return (
+    <dl className={`divide-y divide-slate-100 ${className}`}>
+      {Object.entries(profile)
+        .filter(([key]) => !HIDDEN_FIELDS.has(key))
+        .map(([key, value]) => (
+          <div key={key} className="grid grid-cols-5 gap-3 py-3 text-sm">
+            <dt className="col-span-2 font-medium text-slate-500">{formatProfileLabel(key)}</dt>
+            <dd className="col-span-3 break-all font-medium text-slate-900">{formatProfileValue(value)}</dd>
+          </div>
+        ))}
+    </dl>
+  )
+}
+
 interface ProfileMenuProps {
   profile: Profile | null
   onLogout: () => void
@@ -63,18 +78,7 @@ export default function ProfileMenu({ profile, onLogout }: ProfileMenuProps) {
           </SheetDescription>
         </SheetHeader>
 
-        {profile && (
-          <dl className="divide-y divide-slate-100 px-4">
-            {Object.entries(profile)
-              .filter(([key]) => !HIDDEN_FIELDS.has(key))
-              .map(([key, value]) => (
-                <div key={key} className="grid grid-cols-5 gap-3 py-3 text-sm">
-                  <dt className="col-span-2 font-medium text-slate-500">{formatProfileLabel(key)}</dt>
-                  <dd className="col-span-3 break-all font-medium text-slate-900">{formatProfileValue(value)}</dd>
-                </div>
-              ))}
-          </dl>
-        )}
+        {profile && <ProfileDetails profile={profile} className="px-4" />}
 
         {profile && (
           <SheetFooter className="border-t border-slate-200">
