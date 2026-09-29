@@ -3,7 +3,8 @@
 export const AUTH_CONFIG = {
   // eSignet authorization endpoint
   AUTHORIZE_URL: "https://prod-opt.credissuer.com/authorize",
-  TOKEN_URL: "https://prod-opt.credissuer.com/v1/esignet/oauth/v2/token",
+  // Mimoto signs the client_assertion with its own key (issuer's client_alias) and proxies to eSignet's token endpoint
+  TOKEN_URL: "https://prod-opt.credissuer.com/mimoto/v1/mimoto/get-token/INJIC-8W9L7",
   USERINFO_URL: "https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo",
   JWKS_URL: "https://prod-opt.credissuer.com/.well-known/jwks.json",
   ISSUER: "https://prod-opt.credissuer.com",
@@ -27,9 +28,6 @@ export const AUTH_CONFIG = {
     },
     id_token: {},
   },
-  CLIENT_ASSERTION_ALG: "RS256",
-  // Must equal the `aud` eSignet expects for the client_assertion (the Postman `audience` variable)
-  CLIENT_ASSERTION_AUDIENCE: "https://prod-opt.credissuer.com/v1/esignet/oauth/v2/token",
 }
 
 export const DOWNLOAD_CONFIG = {
