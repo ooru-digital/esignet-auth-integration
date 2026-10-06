@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { CREDISSUER_CONFIG, WALLET_LOGIN_ENABLED } from "@/lib/config"
+import { parseAllowedResponseUri } from "@/lib/wallet"
 
 const FAILED_STATUSES = new Set(["failed", "failure", "error", "rejected", "expired", "invalid"])
 
@@ -14,21 +15,6 @@ function findCredentialSubject(value: unknown): Record<string, unknown> | undefi
     if (found) return found
   }
   return undefined
-}
-
-// Compare parsed URLs: a raw string prefix without a trailing slash would also match lookalike hosts and sibling paths
-function parseAllowedResponseUri(uri: string, prefix: string): URL | null {
-  let target: URL
-  let allowed: URL
-  try {
-    target = new URL(uri)
-    allowed = new URL(prefix)
-  } catch {
-    return null
-  }
-  if (target.origin !== allowed.origin || target.username || target.password) return null
-  const basePath = allowed.pathname.endsWith("/") ? allowed.pathname : `${allowed.pathname}/`
-  return target.pathname.startsWith(basePath) ? target : null
 }
 
 export async function GET(request: NextRequest) {

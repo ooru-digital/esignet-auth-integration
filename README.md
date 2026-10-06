@@ -94,14 +94,14 @@ Take the endpoint URLs from your eSignet discovery document: `https://<esignet-h
 
 The **Login with Wallet** option is hidden unless `NEXT_PUBLIC_ENABLE_WALLET_LOGIN=true`. While it's disabled, the wallet API routes also return `404`.
 
-| Variable | Description |
-| --- | --- |
-| `NEXT_PUBLIC_ENABLE_WALLET_LOGIN` | `true` shows the wallet login option. Defaults to `false`. |
-| `CREDISSUER_PRESENTATION_URL` | Verifier endpoint that creates a presentation request and returns `{ base64qrcode, response_uri }` |
-| `CREDISSUER_RESPONSE_URI_PREFIX` | Allowed base URL for polling, for example `https://<verifier-host>/api/verifier/vp/presentation/`. Only `response_uri` values with the same origin and under this path are polled, and redirects are not followed. |
-| `CREDISSUER_VERIFIER_ORIGIN` | Origin sent to the verifier API, if the verifier requires one |
+| Variable | Required when enabled | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_ENABLE_WALLET_LOGIN` | Yes | `true` shows the wallet login option. Defaults to `false`. |
+| `CREDISSUER_PRESENTATION_URL` | Yes | Verifier endpoint that creates a presentation request and returns `{ base64qrcode, response_uri }` |
+| `CREDISSUER_RESPONSE_URI_PREFIX` | Yes | Allowed base URL for polling, for example `https://<verifier-host>/api/verifier/vp/presentation/`. Only `response_uri` values with the same origin and under this path are polled, and redirects are not followed. |
+| `CREDISSUER_VERIFIER_ORIGIN` | No | Origin sent to the verifier API, if the verifier requires one |
 
-If wallet login is enabled but `CREDISSUER_PRESENTATION_URL` is not set, the wallet login shows a "not configured" error.
+If wallet login is enabled but `CREDISSUER_PRESENTATION_URL` or `CREDISSUER_RESPONSE_URI_PREFIX` is not set, the wallet login shows a "not configured" error naming the missing variable, before any QR code is shown.
 
 ---
 
