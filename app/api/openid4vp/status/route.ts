@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { CREDISSUER_CONFIG } from "@/lib/config"
+import { CREDISSUER_CONFIG, WALLET_LOGIN_ENABLED } from "@/lib/config"
 
 const FAILED_STATUSES = new Set(["failed", "failure", "error", "rejected", "expired", "invalid"])
 
@@ -17,8 +17,13 @@ function findCredentialSubject(value: unknown): Record<string, unknown> | undefi
 }
 
 export async function GET(request: NextRequest) {
+  if (!WALLET_LOGIN_ENABLED) {
+    return NextResponse.json({ status: "failed", error: "Wallet login is disabled" }, { status: 404 })
+  }
+
   const uri = request.nextUrl.searchParams.get("uri")
-  if (!uri || !uri.startsWith(CREDISSUER_CONFIG.RESPONSE_URI_PREFIX)) {
+  const prefix = CREDISSUER_CONFIG.RESPONSE_URI_PREFIX
+  if (!prefix || !uri || !uri.startsWith(prefix)) {
     return NextResponse.json({ status: "failed", error: "Invalid response URI" }, { status: 400 })
   }
 

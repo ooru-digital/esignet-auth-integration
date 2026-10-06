@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
-import { CREDISSUER_CONFIG } from "@/lib/config"
+import { CREDISSUER_CONFIG, WALLET_LOGIN_ENABLED } from "@/lib/config"
 
 export async function POST() {
+  if (!WALLET_LOGIN_ENABLED) {
+    return NextResponse.json({ error: "Wallet login is disabled" }, { status: 404 })
+  }
+  if (!CREDISSUER_CONFIG.PRESENTATION_URL) {
+    return NextResponse.json({ error: "Wallet login is not configured (CREDISSUER_PRESENTATION_URL)" }, { status: 503 })
+  }
+
   try {
     const response = await fetch(CREDISSUER_CONFIG.PRESENTATION_URL, {
       headers: CREDISSUER_CONFIG.HEADERS,

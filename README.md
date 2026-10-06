@@ -1,250 +1,183 @@
-## Overview
+# Citizen Portal
 
-This application provides a user-friendly interface for:
-1. Displaying credential issuers (Digital Liquio)
-2. Allowing users to request credentials (NationalIDCredential)
-3. Redirecting users to eSignet for authentication
-4. Downloading issued credentials via the Mimoto service
+A Next.js citizen portal where citizens sign in and view their profile. It offers two login options:
 
-**Key Features:**
-- OAuth 2.0 PKCE flow for secure authentication
-- Integration with eSignet authorization service
-- Credential download from Mimoto API
-- Responsive UI built with React and Tailwind CSS
-- Configurable authentication and credential parameters
+- **Login with OTP**: OpenID Connect login through [eSignet](https://docs.esignet.io) (Authorization Code flow with PKCE and `private_key_jwt`).
+- **Login with Wallet** (optional, disabled by default): the citizen shares a credential from a wallet app by scanning a QR code (OpenID4VP).
+
+For the full eSignet setup, including how to get an OIDC client on the CredIssuer eSignet or on your own eSignet, see the [eSignet Integration Guide](docs/RELYING_PARTY_INTEGRATION_GUIDE.md).
+
+---
+
+## Quick start with the CredIssuer eSignet
+
+1. Generate an RSA key pair ([guide, Step 1](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#3-step-1-generate-a-key-pair-both-options)).
+2. Request an OIDC client from the CredIssuer team with your **public** key and the redirect URL `http://localhost:3001/redirect` ([guide, Option 1](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#4-step-2-option-1-integrate-with-the-credissuer-esignet)). You receive a `client_id`.
+3. Install dependencies and create your env file:
+
+   ```bash
+   npm install --legacy-peer-deps
+   cp .env.example .env.local
+   ```
+
+4. Fill in `.env.local`:
+
+   ```env
+   NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL=https://prod-opt.credissuer.com/authorize
+   NEXT_PUBLIC_ESIGNET_CLIENT_ID=<your-client-id>
+   NEXT_PUBLIC_ESIGNET_REDIRECT_URI=http://localhost:3001/redirect
+
+   ESIGNET_TOKEN_URL=https://prod-opt.credissuer.com/v1/esignet/oauth/v2/token
+   ESIGNET_USERINFO_URL=https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo
+   ESIGNET_JWKS_URL=https://prod-opt.credissuer.com/.well-known/jwks.json
+   ESIGNET_ISSUER=https://prod-opt.credissuer.com
+   ESIGNET_CLIENT_PRIVATE_KEY=<your private key JWK, single line>
+   ```
+
+5. Run `npm run dev -- -p 3001`, open `http://localhost:3001`, and click **Login with OTP**.
+
+To use your own eSignet instead, see [Option 2 in the guide](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#5-step-2-option-2-integrate-with-your-own-esignet).
 
 ---
 
 ## Prerequisites
 
-- **Node.js**: v20.9.0 or higher
-- **npm**: v10.0.0 or higher
-- **Git**: For cloning the repository
-
-### Verify Installation
-
-```
-node --version
-npm --version
-```
+- **Node.js** v20.9.0 or higher
+- **npm** v10 or higher
+- An **OIDC client** registered on an eSignet instance, and the private key whose public key is registered on it (see the [guide](docs/RELYING_PARTY_INTEGRATION_GUIDE.md))
 
 ---
 
 ## Installation
 
-### 1. Clone or Download the Project
-
-```
+```bash
 git clone <repository-url>
 cd esignet-auth-integration
-```
-
-### 2. Install Dependencies
-
-```
 npm install --legacy-peer-deps
 ```
 
-The `--legacy-peer-deps` flag is required due to React 19.2.0 compatibility with some packages.
-
-### 3. Verify Installation
-
-```
-npm run build
-```
-
-If the build succeeds, you're ready to proceed.
+The `--legacy-peer-deps` flag is required because some packages don't yet declare React 19 support.
 
 ---
 
 ## Configuration
 
-All application configuration is centralized in `lib/config.ts`. This file contains two configuration objects:
+All deployment-specific settings are environment variables. Copy the example file and fill in your values:
 
-### AUTH_CONFIG - eSignet Authorization
-
-```
-export const AUTH_CONFIG = {
-  AUTHORIZE_URL: "https://esignet.id.assembly.govstack.global/authorize",
-  CLIENT_ID: "Liquio",
-  SCOPE: "mosip_identity_vc_ldp",
-  REDIRECT_URI: "http://localhost:3000/redirect",
-  UI_LOCALES: "en",
-  RESPONSE_TYPE: "code",
-  CODE_CHALLENGE_METHOD: "S256",
-}
+```bash
+cp .env.example .env.local
 ```
 
-**Parameters:**
-- `AUTHORIZE_URL`: eSignet's OAuth authorization endpoint
-- `CLIENT_ID`: Your registered OIDC client ID in eSignet
-- `SCOPE`: Permission scope for credential issuance
-- `REDIRECT_URI`: Where eSignet redirects after authentication (must match OIDC client registration)
-- `UI_LOCALES`: Preferred language for eSignet UI
-- `RESPONSE_TYPE`: OAuth response type (always "code" for authorization code flow)
-- `CODE_CHALLENGE_METHOD`: PKCE method (S256 for SHA-256)
+`.env.local` is gitignored. Never commit it.
 
-### DOWNLOAD_CONFIG - Mimoto Credential Download
+### eSignet login
 
-```
-export const DOWNLOAD_CONFIG = {
-  DOWNLOAD_URL: "https://injiweb.id.assembly.govstack.global/v1/mimoto/credentials/download",
-  GRANT_TYPE: "authorization_code",
-  ISSUER: "Digital Liquio",
-  CREDENTIAL_TYPE: "NationalIDCredential",
-  VC_STORAGE_EXPIRY_LIMIT: "1",
-  LOCALE: "en",
-  FILENAME: "NationalIDCredential.pdf",
-}
-```
+Take the endpoint URLs from your eSignet discovery document: `https://<esignet-host>/.well-known/openid-configuration`.
 
-**Parameters:**
-- `DOWNLOAD_URL`: Mimoto credential download endpoint
-- `GRANT_TYPE`: OAuth grant type (always "authorization_code")
-- `ISSUER`: Name of the credential issuer
-- `CREDENTIAL_TYPE`: Type of credential to download
-- `VC_STORAGE_EXPIRY_LIMIT`: Credential validity period
-- `LOCALE`: Credential language preference
-- `FILENAME`: Name of downloaded PDF file
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL` | Yes | eSignet `authorization_endpoint` |
+| `NEXT_PUBLIC_ESIGNET_CLIENT_ID` | Yes | Your registered OIDC client ID |
+| `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` | Yes | Portal callback URL, `<portal-url>/redirect`. Must exactly match a redirect URI registered on the client. |
+| `NEXT_PUBLIC_ESIGNET_SCOPE` | No | Defaults to `openid profile email` |
+| `NEXT_PUBLIC_ESIGNET_UI_LOCALES` | No | eSignet login page language. Defaults to `en`. |
+| `ESIGNET_TOKEN_URL` | Yes | eSignet `token_endpoint` |
+| `ESIGNET_USERINFO_URL` | Yes | eSignet `userinfo_endpoint` |
+| `ESIGNET_JWKS_URL` | Yes | eSignet `jwks_uri` |
+| `ESIGNET_ISSUER` | Yes | eSignet `issuer` |
+| `ESIGNET_CLIENT_PRIVATE_KEY` | Yes | Private key (single-line JWK JSON or PEM) used to sign the `client_assertion`. Server only. Keep it secret. |
+| `ESIGNET_CLIENT_ASSERTION_AUDIENCE` | No | `aud` of the `client_assertion`. Defaults to `ESIGNET_TOKEN_URL`. |
+
+`NEXT_PUBLIC_*` variables are included in the browser bundle. All other variables are only available to the server.
+
+### Wallet login (optional)
+
+The **Login with Wallet** option is hidden unless `NEXT_PUBLIC_ENABLE_WALLET_LOGIN=true`. While it's disabled, the wallet API routes also return `404`.
+
+| Variable | Description |
+| --- | --- |
+| `NEXT_PUBLIC_ENABLE_WALLET_LOGIN` | `true` shows the wallet login option. Defaults to `false`. |
+| `CREDISSUER_PRESENTATION_URL` | Verifier endpoint that creates a presentation request and returns `{ base64qrcode, response_uri }` |
+| `CREDISSUER_RESPONSE_URI_PREFIX` | Only `response_uri` values starting with this prefix are polled |
+| `CREDISSUER_VERIFIER_ORIGIN` | Origin sent to the verifier API, if the verifier requires one |
+
+If wallet login is enabled but `CREDISSUER_PRESENTATION_URL` is not set, the wallet login shows a "not configured" error.
 
 ---
 
-## Running Locally
+## Running locally
 
-### Start Development Server
-
-```
-npm run dev
-```
-
-The application will be available at:
-```
-http://localhost:3000
-```
-
-### Verify It's Running
-
-1. Open your browser
-2. Navigate to `http://localhost:3000`
-3. You should see:
-   - "Credential Issuers" heading
-   - "Digital Liquio" issuer card
-   - "View Templates" button
-
-### Test the Flow
-
-1. Click "View Templates"
-2. Click "Authorize with eSignet"
-3. You should be redirected to eSignet's login page
-4. After authentication, credentials will download automatically
-
-### Troubleshooting
-
-**Port 3000 already in use:**
-```
+```bash
 npm run dev -- -p 3001
 ```
 
-**Dependencies issues:**
+Open `http://localhost:3001`. The port must match `NEXT_PUBLIC_ESIGNET_REDIRECT_URI`, and `http://localhost:3001/redirect` must be registered on your eSignet client.
+
+Restart the dev server after changing `.env.local`. `NEXT_PUBLIC_*` values are read at startup and at build time.
+
+### Production build
+
+```bash
+npm run build
+npm run start
 ```
+
+Set the environment variables on your server or hosting platform before running `npm run build`, because `NEXT_PUBLIC_*` values are embedded at build time. The portal needs a Node.js runtime for its API routes. A static export won't work.
+
+---
+
+## How the eSignet login works
+
+1. **Login with OTP** generates `state` and a PKCE `code_verifier` / `code_challenge` (`lib/pkce.ts`) and redirects to eSignet (`components/login-card.tsx`).
+2. The citizen authenticates with OTP and gives consent on eSignet.
+3. eSignet redirects to `/redirect?code=...&state=...`. The page checks `state` and sends the code to the portal backend (`app/redirect/page.tsx`).
+4. The backend route `app/api/esignet/userinfo/route.ts` signs a `client_assertion` with `ESIGNET_CLIENT_PRIVATE_KEY`, exchanges the code at the token endpoint, calls userinfo, and verifies the signed response (`lib/esignet.ts`).
+5. The citizen profile is shown on the home page (`lib/profile.ts`, `components/profile-menu.tsx`).
+
+See the [eSignet Integration Guide](docs/RELYING_PARTY_INTEGRATION_GUIDE.md) for details and troubleshooting.
+
+## How the wallet login works (when enabled)
+
+1. **Login with Wallet** calls `POST /api/openid4vp/request`, which asks the verifier at `CREDISSUER_PRESENTATION_URL` for a presentation request and returns its QR code.
+2. The citizen scans the QR code with their wallet app and shares the credential.
+3. The page polls `GET /api/openid4vp/status`, which checks the verifier's `response_uri` (only under `CREDISSUER_RESPONSE_URI_PREFIX`) until the credential is received, and then shows the profile.
+
+---
+
+## Project structure
+
+| Path | Purpose |
+| --- | --- |
+| `.env.example` | Template for all environment variables |
+| `lib/config.ts` | Reads the environment variables; defines the requested claims |
+| `lib/pkce.ts` | PKCE and `state` generation |
+| `lib/esignet.ts` | Backend: `client_assertion` signing, token exchange, userinfo verification |
+| `lib/profile.ts` | Profile storage and display helpers |
+| `components/login-card.tsx` | Login options (OTP, and wallet when enabled) |
+| `components/profile-menu.tsx` | Signed-in profile menu and logout |
+| `app/page.tsx` | Home page (login and citizen profile) |
+| `app/redirect/page.tsx` | eSignet callback page |
+| `app/api/esignet/userinfo/route.ts` | Backend route for the eSignet login |
+| `app/api/openid4vp/request/route.ts`, `app/api/openid4vp/status/route.ts` | Backend routes for the wallet login |
+| `docs/RELYING_PARTY_INTEGRATION_GUIDE.md` | eSignet integration guide |
+
+---
+
+## Troubleshooting
+
+**`<VARIABLE> is not set`**: add the variable to `.env.local` (or your hosting environment) and restart the portal.
+
+**Login with Wallet doesn't appear**: set `NEXT_PUBLIC_ENABLE_WALLET_LOGIN=true` and restart the dev server (or rebuild for production).
+
+**Login with OTP does nothing**: `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL` is missing. Set it and restart.
+
+**`Invalid state returned from eSignet`**: open the portal on the same host as the redirect URI (`localhost`, not `127.0.0.1`) and start the login again.
+
+**Port 3001 already in use**: stop the other process, or run on another port and update `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` and the redirect URI registered on your client.
+
+**Dependency issues**:
+
+```bash
 rm -rf node_modules package-lock.json
 npm install --legacy-peer-deps
-npm run dev
 ```
-
----
-
-## API Flow
-
-### 1. Authorization Flow (PKCE OAuth 2.0)
-Detailed Authorization URL with Real Example
-
-Here’s exactly what happens when you click “Authorize with eSignet”:
-
-Step 1: Generate PKCE Parameters
-
-Your app generates these values using cryptography.
-This code runs in your browser when you click the button (from lib/pkce.ts):
-
-```
-// Generate Code Verifier (128 random characters)
-const codeVerifier = generateRandomString(128)
-// Example result:
-// "_M.x1OQ9oBy9UWClTLo97p0jpBAOfKTx.uNNbkwLDMLc7e9f_example_verifier_128_chars_long"
-
-// Generate State (32 random characters)
-const state = generateRandomString(32)
-// Example result:
-// "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
-
-// Generate Code Challenge (SHA-256 hash of the Verifier)
-const codeChallenge = await generateCodeChallenge(codeVerifier)
-// Example result:
-// "0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4"
-```
-
-How generateCodeChallenge Works
-```
-// Takes the 128-character verifier and:
-
-// 1. Converts it to bytes
-const data = encoder.encode(codeVerifier)
-
-// 2. Applies SHA-256 hash (one-way mathematical function)
-const digest = await crypto.subtle.digest("SHA-256", data)
-
-// 3. Converts hash to URL-safe Base64 format
-const base64 = btoa(String.fromCharCode(...new Uint8Array(digest)))
-const codeChallenge = base64
-  .replace(/\+/g, "-")
-  .replace(/\//g, "_")
-  .replace(/=/g, "")
-// Result: 44-character string like "0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4"
-```
-
-Result:
-A 43–44 character Base64URL-encoded string (the code_challenge), for example:
-
-```0lSp2N_kJpTlW3Q2cxKJigtg2N6fnXCe3pJuSnll-Q4```
-
-
-```
-User clicks "Authorize with eSignet"
-    ↓
-Generate PKCE parameters (code_verifier, code_challenge, state)
-    ↓
-Redirect to: https://esignet.id.assembly.govstack.global/authorize?
-    - client_id=Liquio
-    - scope=mosip_identity_vc_ldp
-    - redirect_uri=https://your-domain.com/redirect
-    - state=[state]
-    - code_challenge=[SHA256_hash]
-    - code_challenge_method=S256
-    ↓
-User authenticates at eSignet
-    ↓
-eSignet redirects back with authorization code:
-    https://your-domain.com/redirect?code=[auth_code]&state=[state]
-```
-
-### 2. Credential Download Flow
-
-```
-Redirect page captures authorization code
-    ↓
-Calls /api/credentials/download with:
-    - code (from eSignet)
-    - code_verifier (from sessionStorage)
-    - redirect_uri
-    - issuer
-    - credential_type
-    ↓
-Server calls Mimoto API:
-    POST https://injiweb.id.assembly.govstack.global/v1/mimoto/credentials/download
-    ↓
-Mimoto validates and returns PDF credential
-    ↓
-Browser automatically downloads PDF file
-```
-
----

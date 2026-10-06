@@ -11,6 +11,7 @@ next-env.d.ts
 
 # env files (contain the eSignet client private key)
 .env*
+!.env.example
 
 # typescript
 *.tsbuildinfo

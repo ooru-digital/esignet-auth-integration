@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { generatePKCE } from "@/lib/pkce"
-import { AUTH_CONFIG } from "@/lib/config"
+import { AUTH_CONFIG, WALLET_LOGIN_ENABLED } from "@/lib/config"
 import type { Profile } from "@/lib/profile"
 
 interface LoginCardProps {
@@ -117,12 +117,14 @@ export default function LoginCard({ onLogin }: LoginCardProps) {
 
       {!showQr && (
         <div className="flex flex-col gap-3 px-6 py-6 sm:px-8">
-          <LoginOption
-            icon={<QrCode className="size-5" />}
-            title="Login with Wallet"
-            hint="Share your National ID credential from your wallet app"
-            onClick={startWalletRequest}
-          />
+          {WALLET_LOGIN_ENABLED && (
+            <LoginOption
+              icon={<QrCode className="size-5" />}
+              title="Login with Wallet"
+              hint="Share your National ID credential from your wallet app"
+              onClick={startWalletRequest}
+            />
+          )}
           <LoginOption
             icon={isLoading ? <Loader2 className="size-5 animate-spin" /> : <MessageSquareText className="size-5" />}
             title={isLoading ? "Redirecting..." : "Login with OTP"}
