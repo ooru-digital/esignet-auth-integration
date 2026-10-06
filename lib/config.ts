@@ -45,7 +45,7 @@ const verifierOrigin = process.env.CREDISSUER_VERIFIER_ORIGIN
 export const CREDISSUER_CONFIG = {
   // Creates a wallet presentation request; returns { base64qrcode, response_uri }
   PRESENTATION_URL: process.env.CREDISSUER_PRESENTATION_URL ?? "",
-  // Only response_uri values under this prefix are polled (stops the status route fetching arbitrary URLs)
+  // Only response_uri values with this origin and under this path are polled (stops the status route fetching arbitrary URLs)
   RESPONSE_URI_PREFIX: process.env.CREDISSUER_RESPONSE_URI_PREFIX ?? "",
   HEADERS: {
     Accept: "*/*",

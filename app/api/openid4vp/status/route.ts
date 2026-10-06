@@ -16,6 +16,21 @@ function findCredentialSubject(value: unknown): Record<string, unknown> | undefi
   return undefined
 }
 
+// Compare parsed URLs: a raw string prefix without a trailing slash would also match lookalike hosts and sibling paths
+function parseAllowedResponseUri(uri: string, prefix: string): URL | null {
+  let target: URL
+  let allowed: URL
+  try {
+    target = new URL(uri)
+    allowed = new URL(prefix)
+  } catch {
+    return null
+  }
+  if (target.origin !== allowed.origin || target.username || target.password) return null
+  const basePath = allowed.pathname.endsWith("/") ? allowed.pathname : `${allowed.pathname}/`
+  return target.pathname.startsWith(basePath) ? target : null
+}
+
 export async function GET(request: NextRequest) {
   if (!WALLET_LOGIN_ENABLED) {
     return NextResponse.json({ status: "failed", error: "Wallet login is disabled" }, { status: 404 })
@@ -23,12 +38,17 @@ export async function GET(request: NextRequest) {
 
   const uri = request.nextUrl.searchParams.get("uri")
   const prefix = CREDISSUER_CONFIG.RESPONSE_URI_PREFIX
-  if (!prefix || !uri || !uri.startsWith(prefix)) {
+  const target = prefix && uri ? parseAllowedResponseUri(uri, prefix) : null
+  if (!target) {
     return NextResponse.json({ status: "failed", error: "Invalid response URI" }, { status: 400 })
   }
 
   try {
-    const response = await fetch(uri, { headers: CREDISSUER_CONFIG.HEADERS, cache: "no-store" })
+    // Redirects are not followed, so the fetch can't leave the allowed origin and path
+    const response = await fetch(target, { headers: CREDISSUER_CONFIG.HEADERS, cache: "no-store", redirect: "manual" })
+    if (response.status >= 300 && response.status < 400) {
+      return NextResponse.json({ status: "failed", error: "Verifier responded with an unexpected redirect" })
+    }
     const data = await response.json()
 
     const credentialSubject = findCredentialSubject(data)

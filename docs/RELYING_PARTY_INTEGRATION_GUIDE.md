@@ -106,7 +106,7 @@ A PEM private key (PKCS#8 or PKCS#1) on a single line with `\n` line breaks is a
 
 ### 4.1 Request an OIDC client
 
-OIDC clients on the CredIssuer eSignet are created by the **CredIssuer team**. Contact the CredIssuer team at **`<credissuer-contact-email>`** with these details:
+OIDC clients on the CredIssuer eSignet are created by the **CredIssuer team**. Email [info@ooru.io](mailto:info@ooru.io) with the subject **"eSignet OIDC client request"**, or use the [CredIssuer contact page](https://credissuer.com/contact), and include these details:
 
 | Detail | Description | Example |
 | --- | --- | --- |
@@ -118,7 +118,7 @@ OIDC clients on the CredIssuer eSignet are created by the **CredIssuer team**. C
 | Logo URL | Public HTTPS URL of your logo. | `https://portal.example.gov/logo.png` |
 | Public key | The **public** JWK from Step 1 (`kty`, `n`, `e`). | |
 
-The CredIssuer team registers the client and sends you your **`client_id`**. To change redirect URLs or claims later, or to rotate your key, contact the CredIssuer team with your `client_id`.
+The CredIssuer team registers the client and sends you your **`client_id`**. To change redirect URLs or claims later, or to rotate your key, email [info@ooru.io](mailto:info@ooru.io) with your `client_id` and the requested change.
 
 ### 4.2 CredIssuer eSignet details
 

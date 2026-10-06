@@ -12,7 +12,7 @@ For the full eSignet setup, including how to get an OIDC client on the CredIssue
 ## Quick start with the CredIssuer eSignet
 
 1. Generate an RSA key pair ([guide, Step 1](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#3-step-1-generate-a-key-pair-both-options)).
-2. Request an OIDC client from the CredIssuer team with your **public** key and the redirect URL `http://localhost:3001/redirect` ([guide, Option 1](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#4-step-2-option-1-integrate-with-the-credissuer-esignet)). You receive a `client_id`.
+2. Request an OIDC client from the CredIssuer team ([info@ooru.io](mailto:info@ooru.io) or the [contact page](https://credissuer.com/contact)) with your **public** key and the redirect URL `http://localhost:3001/redirect` ([guide, Option 1](docs/RELYING_PARTY_INTEGRATION_GUIDE.md#4-step-2-option-1-integrate-with-the-credissuer-esignet)). You receive a `client_id`.
 3. Install dependencies and create your env file:
 
    ```bash
@@ -98,7 +98,7 @@ The **Login with Wallet** option is hidden unless `NEXT_PUBLIC_ENABLE_WALLET_LOG
 | --- | --- |
 | `NEXT_PUBLIC_ENABLE_WALLET_LOGIN` | `true` shows the wallet login option. Defaults to `false`. |
 | `CREDISSUER_PRESENTATION_URL` | Verifier endpoint that creates a presentation request and returns `{ base64qrcode, response_uri }` |
-| `CREDISSUER_RESPONSE_URI_PREFIX` | Only `response_uri` values starting with this prefix are polled |
+| `CREDISSUER_RESPONSE_URI_PREFIX` | Allowed base URL for polling, for example `https://<verifier-host>/api/verifier/vp/presentation/`. Only `response_uri` values with the same origin and under this path are polled, and redirects are not followed. |
 | `CREDISSUER_VERIFIER_ORIGIN` | Origin sent to the verifier API, if the verifier requires one |
 
 If wallet login is enabled but `CREDISSUER_PRESENTATION_URL` is not set, the wallet login shows a "not configured" error.
@@ -140,7 +140,7 @@ See the [eSignet Integration Guide](docs/RELYING_PARTY_INTEGRATION_GUIDE.md) for
 
 1. **Login with Wallet** calls `POST /api/openid4vp/request`, which asks the verifier at `CREDISSUER_PRESENTATION_URL` for a presentation request and returns its QR code.
 2. The citizen scans the QR code with their wallet app and shares the credential.
-3. The page polls `GET /api/openid4vp/status`, which checks the verifier's `response_uri` (only under `CREDISSUER_RESPONSE_URI_PREFIX`) until the credential is received, and then shows the profile.
+3. The page polls `GET /api/openid4vp/status`, which checks the verifier's `response_uri` (only on the origin and path of `CREDISSUER_RESPONSE_URI_PREFIX`, without following redirects) until the credential is received, and then shows the profile.
 
 ---
 
