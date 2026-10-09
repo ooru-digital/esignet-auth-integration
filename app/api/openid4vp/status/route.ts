@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { CREDISSUER_CONFIG } from "@/lib/config"
+import { CREDISSUER_CONFIG, WALLET_LOGIN_ENABLED } from "@/lib/config"
+import { parseAllowedResponseUri } from "@/lib/wallet"
 
 const FAILED_STATUSES = new Set(["failed", "failure", "error", "rejected", "expired", "invalid"])
 
@@ -17,13 +18,23 @@ function findCredentialSubject(value: unknown): Record<string, unknown> | undefi
 }
 
 export async function GET(request: NextRequest) {
+  if (!WALLET_LOGIN_ENABLED) {
+    return NextResponse.json({ status: "failed", error: "Wallet login is disabled" }, { status: 404 })
+  }
+
   const uri = request.nextUrl.searchParams.get("uri")
-  if (!uri || !uri.startsWith(CREDISSUER_CONFIG.RESPONSE_URI_PREFIX)) {
+  const prefix = CREDISSUER_CONFIG.RESPONSE_URI_PREFIX
+  const target = prefix && uri ? parseAllowedResponseUri(uri, prefix) : null
+  if (!target) {
     return NextResponse.json({ status: "failed", error: "Invalid response URI" }, { status: 400 })
   }
 
   try {
-    const response = await fetch(uri, { headers: CREDISSUER_CONFIG.HEADERS, cache: "no-store" })
+    // Redirects are not followed, so the fetch can't leave the allowed origin and path
+    const response = await fetch(target, { headers: CREDISSUER_CONFIG.HEADERS, cache: "no-store", redirect: "manual" })
+    if (response.status >= 300 && response.status < 400) {
+      return NextResponse.json({ status: "failed", error: "Verifier responded with an unexpected redirect" })
+    }
     const data = await response.json()
 
     const credentialSubject = findCredentialSubject(data)

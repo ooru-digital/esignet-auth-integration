@@ -1,467 +1,340 @@
-# Integrating a Relying Party with CredIssuer eSignet
+# Citizen Portal: eSignet Integration Guide
 
-This guide explains how any portal or application (a **relying party**) can add **"Login with eSignet"** using the eSignet instance hosted by CredIssuer at `https://prod-opt.credissuer.com`.
+This guide explains how to deploy the **Citizen Portal** (this repository) with **"Login with OTP"** through **eSignet**.
 
-eSignet follows the standard **OpenID Connect (OIDC)** protocol. Each relying party:
+eSignet follows the standard **OpenID Connect (OIDC)** protocol. You can connect the portal to eSignet in two ways:
 
-1. Creates its **own key pair** and keeps the **private key in its own backend**.
-2. Registers its **own OIDC client** in eSignet with the **public key**.
-3. Implements the OIDC Authorization Code flow with PKCE, signing the token request with its private key (`private_key_jwt`).
-
----
-
-## 1. Background: current setup vs. new relying parties
-
-eSignet does not use client secrets. To exchange the authorization code for a token, the relying party must send a JWT (`client_assertion`) **signed with the private key** that matches the public key registered on its OIDC client.
-
-| | Current reference portal (`cred-flow2`) | New relying parties (this guide) |
+| | Option 1: CredIssuer eSignet | Option 2: Your own eSignet |
 | --- | --- | --- |
-| Token call | Portal calls Mimoto `get-token`, Mimoto signs `client_assertion` and forwards to eSignet | Relying party signs `client_assertion` itself and calls eSignet token endpoint directly |
-| Who controls the key | CredIssuer | Relying party |
+| eSignet instance | Hosted by CredIssuer at `https://prod-opt.credissuer.com` | Deployed and operated by you |
+| OIDC client registration | Done by the **CredIssuer team** on request | Done by you on your eSignet |
+| Citizen Portal backend | Run by **you** | Run by **you** |
+| Key pair (`private_key_jwt`) | Generated and kept by you; only the public key is shared with CredIssuer | Generated and kept by you |
 
-The current portal uses Mimoto only because Mimoto maintains the private key for `cred-flow2`. A new relying party owns its client and key, so **it does not need Mimoto**. The rest of the flow (authorize, callback, userinfo) is the same.
+In both options, **you run your own Citizen Portal backend**. The backend holds your private key and exchanges the authorization code for the citizen's details.
 
----
+> **Note on the reference deployment:** The Citizen Portal deployment run by CredIssuer uses CredIssuer's internal backend services for the token exchange. Those services are not available to other deployments. Your deployment must use its own portal backend, as described in this guide.
 
-## 2. eSignet endpoints
-
-| Purpose | URL |
-| --- | --- |
-| Issuer | `https://prod-opt.credissuer.com` |
-| Discovery | `https://prod-opt.credissuer.com/.well-known/openid-configuration` |
-| Authorize | `https://prod-opt.credissuer.com/authorize` |
-| Token | `https://prod-opt.credissuer.com/esignet/v1/esignet/oauth/v2/token` |
-| Userinfo | `https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo` |
-| JWKS (eSignet public keys) | `https://prod-opt.credissuer.com/.well-known/jwks.json` |
-| CSRF token (for client creation) | `https://prod-opt.credissuer.com/esignet/v1/esignet/csrf/token` |
-| Create OIDC client | `https://prod-opt.credissuer.com/esignet/v1/esignet/client-mgmt/oidc-client` |
-
-Supported values:
-
-| Item | Values |
-| --- | --- |
-| Scopes | `openid` (required), `profile`, `email`, `phone` |
-| User claims | `name`, `gender`, `birthdate`, `email`, `phone_number`, `address`, `picture`, `individual_id`, `phone_number_verified` |
-| Login methods (`authContextRefs` / `acr_values`) | `mosip:idp:acr:generated-code` (OTP), `mosip:idp:acr:biometrics`, `mosip:idp:acr:password`, `mosip:idp:acr:knowledge`, `mosip:idp:acr:static-code`, `mosip:idp:acr:linked-wallet` |
-| Client authentication | `private_key_jwt` with `RS256` |
+The portal also has an optional **"Login with Wallet"** option (OpenID4VP QR code). It is separate from eSignet, disabled by default (`NEXT_PUBLIC_ENABLE_WALLET_LOGIN=false`), and not covered in this guide.
 
 ---
 
-## 3. Step 1: Generate a key pair
+## 1. How the eSignet login works
 
-Generate an **RSA 2048-bit** key pair in JWK format.
+The portal uses the OIDC **Authorization Code flow with PKCE** and signs the token request with its own private key (`private_key_jwt`). eSignet does not use client secrets.
 
-- The **public key** goes into the OIDC client registration (Step 2).
-- The **private key** stays in the relying party **backend** only (environment variable or secret manager). Never put it in frontend code, mobile apps, or git.
+```
+ Citizen      Portal frontend               Portal backend                  eSignet
+  | Login with OTP |                              |                              |
+  |--------------->| create state + PKCE          |                              |
+  |                |-- redirect to /authorize ---------------------------------->|
+  |<-------------------------- eSignet login (OTP) + consent --------------------|
+  |                |<-- /redirect?code=...&state=... ----------------------------|
+  |                | check state                  |                              |
+  |                |-- code + code_verifier ----->|                              |
+  |                |   (POST /api/esignet/userinfo)                              |
+  |                |                              | sign client_assertion        |
+  |                |                              |   with PRIVATE KEY           |
+  |                |                              |-- POST token_endpoint ------>|
+  |                |                              |<-- access_token -------------|
+  |                |                              |-- GET userinfo ------------->|
+  |                |                              |<-- signed user claims -------|
+  |                |<-- citizen profile ----------|                              |
+```
 
-Example using Node.js (`npm install jose`):
+The portal is a Next.js application. Its **backend** is the set of Next.js API routes that run on the server, so the private key never reaches the browser.
+
+| Part | File | Runs on |
+| --- | --- | --- |
+| eSignet settings, read from environment variables | `lib/config.ts` | Frontend and backend |
+| Generate `state`, `code_verifier`, `code_challenge` | `lib/pkce.ts` | Frontend |
+| Build the authorize URL and redirect to eSignet | `components/login-card.tsx` (`handleAuthorize`) | Frontend |
+| Handle the callback, check `state`, call the backend | `app/redirect/page.tsx` | Frontend |
+| Backend API route for the login | `app/api/esignet/userinfo/route.ts` | **Backend** |
+| Sign `client_assertion`, call token and userinfo endpoints, verify the userinfo JWT | `lib/esignet.ts` | **Backend** |
+| Store and display the citizen profile | `lib/profile.ts`, `components/profile-menu.tsx` | Frontend |
+
+---
+
+## 2. Prerequisites
+
+- **Node.js** v20.9.0 or higher and **npm** v10 or higher.
+- A server or hosting platform that runs Next.js with server-side API routes (for example a Node.js server, a container, or Vercel). A static export won't work, because the backend routes are required.
+
+Install and run locally:
+
+```bash
+npm install --legacy-peer-deps
+npm run dev -- -p 3001
+```
+
+The portal runs at `http://localhost:3001`. The port must match the host and port in `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` (section 6).
+
+---
+
+## 3. Step 1: Generate a key pair (both options)
+
+Generate an **RSA 2048-bit** key pair. The **public key** is registered on your OIDC client. The **private key** stays in your portal backend only.
 
 ```js
 // generate-keys.mjs  ->  run: node generate-keys.mjs
-import { generateKeyPair, exportJWK, calculateJwkThumbprint } from "jose"
+import { generateKeyPair, exportJWK } from "jose"
 
 const { publicKey, privateKey } = await generateKeyPair("RS256", { modulusLength: 2048, extractable: true })
 const publicJwk = await exportJWK(publicKey)
 const privateJwk = await exportJWK(privateKey)
-const kid = await calculateJwkThumbprint(publicJwk)
 
-Object.assign(privateJwk, { kid, use: "sig", alg: "RS256" })
-
-console.log("PUBLIC KEY (use in client registration):")
+console.log("PUBLIC KEY (register on the OIDC client):")
 console.log(JSON.stringify({ kty: publicJwk.kty, n: publicJwk.n, e: publicJwk.e }, null, 2))
-console.log("\nPRIVATE KEY (store in backend secret, e.g. ESIGNET_CLIENT_PRIVATE_KEY):")
+console.log("\nPRIVATE KEY (store as ESIGNET_CLIENT_PRIVATE_KEY in the portal backend):")
 console.log(JSON.stringify(privateJwk))
 ```
 
-The public key looks like this:
-
-```json
-{
-  "kty": "RSA",
-  "n": "2zh6x_OiH6uqVYor5fcn...<long base64url value>...",
-  "e": "AQAB"
-}
-```
-
----
-
-## 4. Step 2: Create the OIDC client
-
-### 4.1 Get a CSRF token
-
-The client-management API requires a CSRF token. The **same value** must be sent in the `X-XSRF-TOKEN` header **and** in the `XSRF-TOKEN` cookie.
-
-```bash
-curl -s -i 'https://prod-opt.credissuer.com/esignet/v1/esignet/csrf/token'
-```
-
-Response:
-
-```
-Set-Cookie: XSRF-TOKEN=9a14e69e-9753-4c72-b348-5204c8278412; Path=/
-
-{"token":"9a14e69e-9753-4c72-b348-5204c8278412","parameterName":"_csrf","headerName":"X-XSRF-TOKEN"}
-```
-
-### 4.2 Create the client
-
-Replace the values in `< >` and set `requestTime` to the **current UTC time** (format `yyyy-MM-ddTHH:mm:ss.SSSZ`).
-
-```bash
-curl --location 'https://prod-opt.credissuer.com/esignet/v1/esignet/client-mgmt/oidc-client' \
---header 'X-XSRF-TOKEN: <csrf_token>' \
---header 'Cookie: XSRF-TOKEN=<csrf_token>' \
---header 'Content-Type: application/json' \
---data '{
-  "requestTime": "2026-09-30T12:33:04.605Z",
-  "request": {
-    "clientId": "<your-client-id>",
-    "clientName": "<Your Portal Name>",
-    "publicKey": {
-      "kty": "RSA",
-      "n": "<public key n value from Step 1>",
-      "e": "AQAB"
-    },
-    "relyingPartyId": "mpartner-default-esignet",
-    "userClaims": ["name", "email", "gender", "phone_number", "picture", "birthdate"],
-    "authContextRefs": ["mosip:idp:acr:generated-code", "mosip:idp:acr:biometrics"],
-    "logoUri": "https://<your-domain>/logo.png",
-    "redirectUris": [
-      "https://<your-domain>/redirect"
-    ],
-    "grantTypes": ["authorization_code"],
-    "clientAuthMethods": ["private_key_jwt"]
-  }
-}'
-```
-
-Field reference:
-
-| Field | Description | Example |
-| --- | --- | --- |
-| `requestTime` | Current UTC time. Requests with an old time are rejected. | `2026-09-30T12:33:04.605Z` |
-| `clientId` | Unique ID for your application. Used as `client_id` in every OIDC call. | `my-portal` |
-| `clientName` | Name shown to users on the eSignet login and consent page. | `My Portal` |
-| `publicKey` | Public JWK from Step 1 (`kty`, `n`, `e`). | |
-| `relyingPartyId` | Partner ID the client belongs to. | `mpartner-default-esignet` |
-| `userClaims` | Claims your application may request. Ask only for what you need. | `["name","email","phone_number"]` |
-| `authContextRefs` | Login methods allowed for your users. | `["mosip:idp:acr:generated-code"]` (OTP) |
-| `logoUri` | Public HTTPS URL of your logo. Required by the API; the logo is not currently displayed on the eSignet page. | `https://my-portal.gov/logo.png` |
-| `redirectUris` | **Exact** callback URLs of your application (web or mobile deep links). | `https://my-portal.gov/redirect` |
-| `grantTypes` | Always `authorization_code`. | `["authorization_code"]` |
-| `clientAuthMethods` | Always `private_key_jwt`. | `["private_key_jwt"]` |
-
-Successful response:
-
-```json
-{
-  "responseTime": "2026-09-30T12:33:05.120Z",
-  "response": { "clientId": "my-portal", "status": "ACTIVE" },
-  "errors": []
-}
-```
-
-If `errors` is not empty, check `errorCode` (for example `duplicate_client_id`, `invalid_public_key`, `invalid_request_time`) and fix the request.
-
-### 4.3 Update the client later (optional)
-
-To add redirect URLs, change claims, or change the client name, update the client (same CSRF headers):
-
-```bash
-curl --location --request PUT 'https://prod-opt.credissuer.com/esignet/v1/esignet/client-mgmt/oidc-client/<your-client-id>' \
---header 'X-XSRF-TOKEN: <csrf_token>' \
---header 'Cookie: XSRF-TOKEN=<csrf_token>' \
---header 'Content-Type: application/json' \
---data '{
-  "requestTime": "<current UTC time>",
-  "request": {
-    "clientName": "<Your Portal Name>",
-    "status": "ACTIVE",
-    "logoUri": "https://<your-domain>/logo.png",
-    "redirectUris": ["https://<your-domain>/redirect", "https://<your-domain>/new-redirect"],
-    "userClaims": ["name", "email", "gender", "phone_number", "picture", "birthdate"],
-    "authContextRefs": ["mosip:idp:acr:generated-code", "mosip:idp:acr:biometrics"],
-    "grantTypes": ["authorization_code"],
-    "clientAuthMethods": ["private_key_jwt"]
-  }
-}'
-```
-
----
-
-## 5. Step 3: Configure the relying party backend
+Store the private key in the backend environment, for example in `.env.local` for local development, or your hosting provider's secret manager in production:
 
 ```env
-ESIGNET_ISSUER=https://prod-opt.credissuer.com
-ESIGNET_AUTHORIZE_URL=https://prod-opt.credissuer.com/authorize
-ESIGNET_TOKEN_URL=https://prod-opt.credissuer.com/esignet/v1/esignet/oauth/v2/token
-ESIGNET_USERINFO_URL=https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo
-ESIGNET_JWKS_URL=https://prod-opt.credissuer.com/.well-known/jwks.json
-ESIGNET_CLIENT_ID=<your-client-id>
-ESIGNET_REDIRECT_URI=https://<your-domain>/redirect
-ESIGNET_SCOPE=openid profile email
-ESIGNET_CLIENT_PRIVATE_KEY={"kty":"RSA","n":"...","e":"AQAB","d":"...","p":"...","q":"...","dp":"...","dq":"...","qi":"...","kid":"...","alg":"RS256","use":"sig"}
+ESIGNET_CLIENT_PRIVATE_KEY={"kty":"RSA","n":"...","e":"AQAB","d":"...","p":"...","q":"...","dp":"...","dq":"...","qi":"..."}
 ```
 
-`ESIGNET_CLIENT_PRIVATE_KEY` is secret. Store it in the backend only.
+A PEM private key (PKCS#8 or PKCS#1) on a single line with `\n` line breaks is also accepted.
+
+> **Never share the private key** with anyone, including the CredIssuer team or the eSignet operator, and never commit it to git.
 
 ---
 
-## 6. Step 4: Implement the login flow
+## 4. Step 2, Option 1: Integrate with the CredIssuer eSignet
 
-### 6.1 Flow overview
+### 4.1 Request an OIDC client
 
-```
- User        RP frontend              RP backend                     eSignet
-  | Login        |                         |                             |
-  |------------->| create state + PKCE     |                             |
-  |              |-- redirect to /authorize ----------------------------->|
-  |<----------------------- eSignet login (OTP / biometrics) + consent ---|
-  |              |<-- redirect_uri?code=...&state=... --------------------|
-  |              | check state             |                             |
-  |              |-- code + code_verifier->|                             |
-  |              |                         | sign client_assertion       |
-  |              |                         |   with PRIVATE KEY          |
-  |              |                         |-- POST /token ------------->|
-  |              |                         |<-- access_token, id_token --|
-  |              |                         |-- GET /userinfo ----------->|
-  |              |                         |<-- signed user claims ------|
-  |              |<-- user profile / session                             |
-```
+OIDC clients on the CredIssuer eSignet are created by the **CredIssuer team**. Email [info@ooru.io](mailto:info@ooru.io) with the subject **"eSignet OIDC client request"**, or use the [CredIssuer contact page](https://credissuer.com/contact), and include these details:
 
-### 6.2 Redirect the user to eSignet (frontend)
+| Detail | Description | Example |
+| --- | --- | --- |
+| Organization and contact | Your organization and a technical contact for the integration. | `My Department, Jane Doe, jane@portal.example.gov` |
+| Application name | Shown to citizens on the eSignet login and consent page. | `Citizen Portal` |
+| Redirect URLs | **Exact** callback URL(s) of your portal. The callback page is `/redirect`. | `https://portal.example.gov/redirect` |
+| User claims | Claims your portal needs (see section 4.2). | `name`, `gender`, `birthdate`, `email`, `phone_number`, `address`, `picture` |
+| Login method | OTP (`mosip:idp:acr:generated-code`). | `mosip:idp:acr:generated-code` |
+| Logo URL | Public HTTPS URL of your logo. | `https://portal.example.gov/logo.png` |
+| Public key | The **public** JWK from Step 1 (`kty`, `n`, `e`). | |
 
-Generate a random `state` and a PKCE `code_verifier` / `code_challenge`, keep them in the session, and redirect:
+The CredIssuer team registers the client and sends you your **`client_id`**. To change redirect URLs or claims later, or to rotate your key, email [info@ooru.io](mailto:info@ooru.io) with your `client_id` and the requested change.
 
-```
-GET https://prod-opt.credissuer.com/authorize
-  ?response_type=code
-  &client_id=<your-client-id>
-  &scope=openid%20profile%20email
-  &redirect_uri=<your registered redirect URI, URL-encoded>
-  &state=<random state>
-  &code_challenge=<BASE64URL(SHA256(code_verifier))>
-  &code_challenge_method=S256
-  &ui_locales=en
-  &acr_values=mosip:idp:acr:generated-code
-  &claims=<URL-encoded claims JSON>
-```
+### 4.2 CredIssuer eSignet details
 
-`claims` JSON (only claims allowed in your client's `userClaims`):
-
-```json
-{
-  "userinfo": {
-    "name": { "essential": true },
-    "email": { "essential": true },
-    "phone_number": { "essential": true },
-    "gender": { "essential": true },
-    "birthdate": { "essential": true },
-    "picture": { "essential": true }
-  },
-  "id_token": {}
-}
-```
-
-Example (browser JavaScript):
-
-```js
-function randomString(length) {
-  const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-  return Array.from(crypto.getRandomValues(new Uint8Array(length)), (b) => charset[b % charset.length]).join("")
-}
-
-async function loginWithEsignet() {
-  const codeVerifier = randomString(128)
-  const state = randomString(32)
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(codeVerifier))
-  const codeChallenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
-
-  sessionStorage.setItem("pkce_code_verifier", codeVerifier)
-  sessionStorage.setItem("pkce_state", state)
-
-  const url = new URL("https://prod-opt.credissuer.com/authorize")
-  url.searchParams.set("response_type", "code")
-  url.searchParams.set("client_id", "<your-client-id>")
-  url.searchParams.set("scope", "openid profile email")
-  url.searchParams.set("redirect_uri", "https://<your-domain>/redirect")
-  url.searchParams.set("state", state)
-  url.searchParams.set("code_challenge", codeChallenge)
-  url.searchParams.set("code_challenge_method", "S256")
-  url.searchParams.set("ui_locales", "en")
-  url.searchParams.set("claims", JSON.stringify({
-    userinfo: { name: { essential: true }, email: { essential: true }, phone_number: { essential: true } },
-    id_token: {},
-  }))
-  window.location.href = url.toString()
-}
-```
-
-### 6.3 Handle the callback (frontend)
-
-eSignet redirects to your `redirect_uri`:
-
-- Success: `?code=<auth_code>&state=<state>`
-- Failure: `?error=<code>&error_description=<message>`
-
-1. If `error` is present, show `error_description`.
-2. Check that `state` equals the stored value. If not, stop.
-3. Send `code` and the stored `code_verifier` to **your backend**.
-4. Clear the stored values. The code can be used only once.
-
-### 6.4 Exchange the code for tokens (backend)
-
-The backend creates a **client assertion** JWT, signed with the private key:
-
-| JWT claim | Value |
+| Item | Value |
 | --- | --- |
-| `iss` | Your `client_id` |
-| `sub` | Your `client_id` |
-| `aud` | `https://prod-opt.credissuer.com/esignet/v1/esignet/oauth/v2/token` |
-| `iat` | Current time (seconds) |
-| `exp` | A few minutes after `iat` |
-| `jti` | Random unique ID |
-| Header | `alg: RS256`, `kid: <your key id>` |
+| Discovery | `https://prod-opt.credissuer.com/.well-known/openid-configuration` |
+| Issuer | `https://prod-opt.credissuer.com` |
+| Authorize | `https://prod-opt.credissuer.com/authorize` |
+| Token | `https://prod-opt.credissuer.com/v1/esignet/oauth/v2/token` |
+| Userinfo | `https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo` |
+| JWKS | `https://prod-opt.credissuer.com/.well-known/jwks.json` |
+| Scopes | `openid` (required), `profile`, `email`, `phone` |
+| Claims | `name`, `address`, `gender`, `birthdate`, `picture`, `email`, `phone_number`, `individual_id`, `phone_number_verified` |
+| Login method | OTP (`mosip:idp:acr:generated-code`) |
+| Client authentication | `private_key_jwt` with `RS256` |
 
-Then it calls the token endpoint:
+Continue with section 6.
+
+---
+
+## 5. Step 2, Option 2: Integrate with your own eSignet
+
+### 5.1 Set up eSignet
+
+Deploy eSignet and connect it to your identity system by following the [eSignet documentation](https://docs.esignet.io). Make sure it is reachable over HTTPS from your citizens' browsers and from your portal backend.
+
+### 5.2 Find your eSignet endpoints
+
+Every eSignet instance publishes its endpoints in its discovery document:
+
+```bash
+curl -s https://<your-esignet-host>/.well-known/openid-configuration
+```
+
+| Discovery field | Used for |
+| --- | --- |
+| `issuer` | `ESIGNET_ISSUER` |
+| `authorization_endpoint` | `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL` |
+| `token_endpoint` | `ESIGNET_TOKEN_URL` |
+| `userinfo_endpoint` | `ESIGNET_USERINFO_URL` |
+| `jwks_uri` | `ESIGNET_JWKS_URL` |
+| `scopes_supported` | Allowed values for `NEXT_PUBLIC_ESIGNET_SCOPE` |
+| `claims_supported` | Claims you can request in `AUTH_CONFIG.CLAIMS` (`lib/config.ts`) |
+| `acr_values_supported` | Must include `mosip:idp:acr:generated-code` (OTP) |
+
+Endpoint paths differ between eSignet deployments, so copy them from the discovery document instead of guessing.
+
+### 5.3 Register the portal as an OIDC client
+
+Register an OIDC client on your eSignet, using its client-management API or partner management tooling as described in the eSignet documentation. Use these values:
+
+| Client setting | Value |
+| --- | --- |
+| Client ID | A unique ID for your portal, for example `citizen-portal` |
+| Client name | Shown to citizens on the eSignet login and consent page |
+| Public key | The **public** JWK from Step 1 |
+| Redirect URIs | **Exact** callback URL(s), for example `https://portal.example.gov/redirect` |
+| User claims | Claims the portal needs, from `claims_supported` |
+| Auth context refs (login method) | `mosip:idp:acr:generated-code` (OTP) |
+| Grant types | `authorization_code` |
+| Client auth methods | `private_key_jwt` |
+| Logo URI | Public HTTPS URL of your logo |
+
+Continue with section 6.
+
+---
+
+## 6. Step 3: Configure the portal
+
+The portal is configured with environment variables. Copy the example file and fill in your values:
+
+```bash
+cp .env.example .env.local
+```
+
+For production, set the same variables on your server or hosting platform, using its secret manager for `ESIGNET_CLIENT_PRIVATE_KEY`. `.env.local` is gitignored. Never commit it.
+
+Example for **Option 1 (CredIssuer eSignet)**. For **Option 2**, replace the URLs with the values from your discovery document:
+
+```env
+# eSignet login (sent to the browser)
+NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL=https://prod-opt.credissuer.com/authorize
+NEXT_PUBLIC_ESIGNET_CLIENT_ID=<your-client-id>
+NEXT_PUBLIC_ESIGNET_REDIRECT_URI=https://portal.example.gov/redirect
+NEXT_PUBLIC_ESIGNET_SCOPE=openid profile email
+NEXT_PUBLIC_ESIGNET_UI_LOCALES=en
+
+# eSignet backend (server only)
+ESIGNET_TOKEN_URL=https://prod-opt.credissuer.com/v1/esignet/oauth/v2/token
+ESIGNET_USERINFO_URL=https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo
+ESIGNET_JWKS_URL=https://prod-opt.credissuer.com/.well-known/jwks.json
+ESIGNET_ISSUER=https://prod-opt.credissuer.com
+ESIGNET_CLIENT_PRIVATE_KEY={"kty":"RSA","n":"...","e":"AQAB","d":"...","p":"...","q":"...","dp":"...","dq":"...","qi":"..."}
+```
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL` | Yes | eSignet authorize endpoint. |
+| `NEXT_PUBLIC_ESIGNET_CLIENT_ID` | Yes | Your registered client ID. |
+| `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` | Yes | `<portal-url>/redirect`. Must **exactly** match a redirect URL registered on the client (scheme, host, port, path, trailing slash). |
+| `NEXT_PUBLIC_ESIGNET_SCOPE` | No | Defaults to `openid profile email`. Must include `openid`. |
+| `NEXT_PUBLIC_ESIGNET_UI_LOCALES` | No | Language of the eSignet login page. Defaults to `en`. |
+| `ESIGNET_TOKEN_URL` | Yes | eSignet token endpoint. Called by the portal backend. |
+| `ESIGNET_USERINFO_URL` | Yes | eSignet userinfo endpoint. Called by the portal backend. |
+| `ESIGNET_JWKS_URL` | Yes | eSignet public keys, used to verify the signed userinfo response. |
+| `ESIGNET_ISSUER` | Yes | eSignet issuer. Must match the `iss` of the userinfo JWT exactly. |
+| `ESIGNET_CLIENT_PRIVATE_KEY` | Yes | Your private key from Step 1. Server only. |
+| `ESIGNET_CLIENT_ASSERTION_AUDIENCE` | No | `aud` of the `client_assertion`. Defaults to `ESIGNET_TOKEN_URL`. |
+
+`NEXT_PUBLIC_*` variables are included in the browser bundle and embedded at build time, so set them before `npm run build` and restart the dev server after changing them. All other variables are only available to the backend.
+
+The claims requested from userinfo are set in `AUTH_CONFIG.CLAIMS` in `lib/config.ts`. eSignet only releases claims that are requested there **and** allowed for the client, so remove any claims your client isn't allowed.
+
+The portal doesn't send `acr_values`, so eSignet uses the login method registered on the client (OTP). You can also send `acr_values=mosip:idp:acr:generated-code` explicitly by adding it to the authorize URL in `components/login-card.tsx`.
+
+The login card only shows **Login with OTP** by default. **Login with Wallet** stays hidden unless `NEXT_PUBLIC_ENABLE_WALLET_LOGIN=true`; its settings are listed in the [README](../README.md#wallet-login-optional).
+
+---
+
+## 7. How the backend token exchange works
+
+No code changes are needed. Once `ESIGNET_CLIENT_PRIVATE_KEY` is set, the portal backend (`lib/esignet.ts`) signs a `client_assertion` with your private key and sends it with the token request:
 
 ```
-POST https://prod-opt.credissuer.com/esignet/v1/esignet/oauth/v2/token
+POST <ESIGNET_TOKEN_URL>
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
 &code=<auth_code>
-&redirect_uri=<same redirect URI used in the authorize step>
-&client_id=<your-client-id>
-&code_verifier=<code_verifier>
+&redirect_uri=<NEXT_PUBLIC_ESIGNET_REDIRECT_URI>
+&client_id=<NEXT_PUBLIC_ESIGNET_CLIENT_ID>
 &client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
 &client_assertion=<signed JWT>
+&code_verifier=<code_verifier>
 ```
 
-Example (Node.js, `npm install jose`):
+The `client_assertion` JWT contains:
 
-```js
-import { SignJWT, importJWK } from "jose"
+| Claim | Value |
+| --- | --- |
+| `iss`, `sub` | Your client ID |
+| `aud` | `ESIGNET_CLIENT_ASSERTION_AUDIENCE` (defaults to `ESIGNET_TOKEN_URL`) |
+| `iat`, `exp` | Now, and 60 seconds later |
+| `jti` | Random unique ID |
+| Header | `alg: RS256`, `typ: JWT`, no `kid` |
 
-const TOKEN_URL = process.env.ESIGNET_TOKEN_URL
-const CLIENT_ID = process.env.ESIGNET_CLIENT_ID
+The header has no `kid` because eSignet matches a header `kid` against the registered key, and a different value fails verification.
 
-async function createClientAssertion() {
-  const jwk = JSON.parse(process.env.ESIGNET_CLIENT_PRIVATE_KEY)
-  const privateKey = await importJWK(jwk, "RS256")
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
-    .setIssuer(CLIENT_ID)
-    .setSubject(CLIENT_ID)
-    .setAudience(TOKEN_URL)
-    .setJti(crypto.randomUUID())
-    .setIssuedAt()
-    .setExpirationTime("2m")
-    .sign(privateKey)
-}
+The backend then calls `ESIGNET_USERINFO_URL` with the access token and verifies the signed response against `ESIGNET_JWKS_URL` and `ESIGNET_ISSUER`.
 
-async function exchangeCode(code, codeVerifier) {
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: process.env.ESIGNET_REDIRECT_URI,
-      client_id: CLIENT_ID,
-      code_verifier: codeVerifier,
-      client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-      client_assertion: await createClientAssertion(),
-    }),
-  })
-  const data = await response.json()
-  if (!response.ok) throw new Error(`${data.error}: ${data.error_description}`)
-  return data
-}
-```
+---
 
-Successful response:
+## 8. Step 4: Test the login
 
-```json
-{
-  "access_token": "eyJhbGciOiJSUzI1NiIs...",
-  "id_token": "eyJhbGciOiJSUzI1NiIs...",
-  "token_type": "Bearer",
-  "expires_in": 3600
-}
-```
+1. Start the portal (`npm run dev -- -p 3001`) and open `http://localhost:3001` (use `localhost`, not `127.0.0.1`). For local testing, `NEXT_PUBLIC_ESIGNET_REDIRECT_URI=http://localhost:3001/redirect` must be registered as a redirect URL on the client.
+2. Click **Login with OTP**. You are redirected to the eSignet login page with your application name.
+3. Enter the citizen's ID, enter the OTP received, and accept the consent screen.
+4. eSignet redirects to `/redirect`, the portal backend exchanges the code, and the profile page shows the citizen's details.
 
-### 6.5 Get the user details (backend)
+If something fails, the `/redirect` page shows the error returned by eSignet or by the portal backend. Backend errors are also logged in the terminal or server logs.
 
-```
-GET https://prod-opt.credissuer.com/v1/esignet/oidc/userinfo
-Authorization: Bearer <access_token>
-```
+---
 
-The response is a **signed JWT**. Verify it with eSignet's JWKS before trusting it. Some responses arrive as plain JSON, so handle both:
+## 9. Citizen profile
 
-```js
-import { createRemoteJWKSet, jwtVerify } from "jose"
+The userinfo response is a **signed JWT**. The backend verifies it against `ESIGNET_JWKS_URL` and `ESIGNET_ISSUER`. Some eSignet deployments return plain JSON instead, which the portal also accepts. JWT metadata claims (`iss`, `aud`, `iat`, `exp`, `nbf`, `jti`) are removed, and the remaining claims become the citizen profile.
 
-const jwks = createRemoteJWKSet(new URL(process.env.ESIGNET_JWKS_URL))
-
-async function getUserInfo(accessToken) {
-  const response = await fetch(process.env.ESIGNET_USERINFO_URL, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  const text = (await response.text()).trim()
-  if (!response.ok) throw new Error(`Userinfo failed (${response.status}): ${text.slice(0, 300)}`)
-
-  const body = text.startsWith('"') ? JSON.parse(text).trim() : text
-  if (body.startsWith("{")) return JSON.parse(body)
-
-  const { payload } = await jwtVerify(body, jwks, { issuer: process.env.ESIGNET_ISSUER })
-  return payload
-}
-```
-
-Example claims:
+Example:
 
 ```json
 {
   "sub": "8Hx1...unique-user-id",
   "name": "Jane Doe",
-  "email": "jane@example.com",
-  "phone_number": "+91XXXXXXXXXX",
   "gender": "Female",
   "birthdate": "1990/01/01",
+  "email": "jane@example.com",
+  "phone_number": "+91XXXXXXXXXX",
   "picture": "data:image/jpeg;base64,..."
 }
 ```
 
-Use `sub` as the user's unique ID in your system. It is specific to your client. Then create your application's own session.
+How the portal displays it (`lib/profile.ts`):
+
+- **Name**: `givenName` + `surName`, otherwise `fullName`, otherwise `name`.
+- **Photo**: `photo`, `face`, or `picture`.
+- **`sub`** is shown as "National ID". It is the citizen's unique ID for your client (eSignet uses pairwise subjects, so the value differs per client).
+- All other claims are listed with readable labels.
 
 ---
 
-## 7. Common errors
+## 10. Troubleshooting
 
 | Error | Cause and fix |
 | --- | --- |
-| `invalid_redirect_uri` on the eSignet page | `redirect_uri` is not in the client's `redirectUris`, or doesn't match exactly (scheme, host, port, path, trailing slash). |
-| `invalid_client_id` | Wrong `client_id`, or the client is not `ACTIVE`. |
-| `invalid_assertion` | `client_assertion` missing, signed with a key that doesn't match the registered public key, wrong `aud`, `iss`/`sub` not equal to `client_id`, or expired (check server clock). |
-| `invalid_pkce_challenge` / `invalid_code_verifier` | `code_verifier` doesn't match the `code_challenge` from the authorize step. |
-| `invalid_transaction` / `invalid_code` | Code already used or expired, or `redirect_uri` differs between the authorize and token calls. |
-| `invalid_claim` / missing claims | Claim not in the client's `userClaims`, not requested in `claims`, or the user declined consent. |
-| `invalid_acr` | `acr_values` not in the client's `authContextRefs`. |
-| CSRF error (`403`) when creating the client | `X-XSRF-TOKEN` header and `XSRF-TOKEN` cookie are missing or don't have the same value. Get a fresh token (section 4.1). |
-| `invalid_request_time` when creating the client | `requestTime` is not the current UTC time. |
-| `duplicate_client_id` | The `clientId` already exists. Choose another one, or update the existing client (section 4.3). |
+| `invalid_redirect_uri` on the eSignet page | `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` is not registered on the client, or doesn't match exactly (scheme, host, port, path, trailing slash). Option 1: ask the CredIssuer team to add it. Option 2: update your client. |
+| `invalid_client_id` | Wrong `NEXT_PUBLIC_ESIGNET_CLIENT_ID`, or the client is not active. |
+| `invalid_assertion` | `ESIGNET_CLIENT_PRIVATE_KEY` is missing or doesn't match the registered public key, the `client_assertion` audience differs from what eSignet expects (set `ESIGNET_CLIENT_ASSERTION_AUDIENCE`), or the server clock is wrong. |
+| `<VARIABLE> is not set` | Add the variable to the backend environment and restart the portal. |
+| Login button does nothing | `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL` is missing. Set it and restart the dev server, or rebuild for production. |
+| `invalid_pkce_challenge` / `invalid_code_verifier` | The `code_verifier` doesn't match the `code_challenge`. Usually caused by starting the login in one browser tab or origin and finishing it in another. |
+| `invalid_transaction` / `invalid_code` | Code already used or expired, or the redirect URI differs between the authorize and token calls. Start the login again. |
+| `Invalid state returned from eSignet` | The callback `state` doesn't match the stored value (session storage was cleared, or the login started on a different host such as `127.0.0.1` vs `localhost`). |
+| Userinfo JWT verification fails (`JWSSignatureVerificationFailed`, `unexpected "iss" claim value`) | `ESIGNET_JWKS_URL` or `ESIGNET_ISSUER` doesn't match the eSignet instance. Copy both from the discovery document. |
+| Profile missing some fields | The claim is not in `AUTH_CONFIG.CLAIMS`, not allowed for the client, not supported by the eSignet, or the citizen declined it on the consent screen. |
+| `invalid_acr` | OTP (`mosip:idp:acr:generated-code`) is not enabled for the client. |
 
 ---
 
-## 8. Security checklist
+## 11. Production checklist
 
-- [ ] Private key stored only in the backend (environment variable or secret manager), never in frontend, mobile app, or git.
-- [ ] Token exchange and userinfo calls made from the backend.
-- [ ] `state` checked on callback, and PKCE (`S256`) used.
-- [ ] Userinfo JWT verified with the eSignet JWKS.
-- [ ] All `redirectUris` use HTTPS.
-- [ ] Only the claims you need are listed in `userClaims`.
-- [ ] Key rotation or leak plan: agree with the CredIssuer team how a new public key is registered (for example a new client ID), then switch the backend to the new private key.
+- [ ] The portal backend runs on your own server or hosting platform, with server-side API routes enabled.
+- [ ] All environment variables are set on the hosting platform before `npm run build` (`NEXT_PUBLIC_*` values are embedded at build time).
+- [ ] `NEXT_PUBLIC_ENABLE_WALLET_LOGIN` is `false` (or unset) unless you have configured the wallet login.
+- [ ] The private key is stored only in the backend environment or a secret manager, never in git or the browser, and is not shared with anyone.
+- [ ] `NEXT_PUBLIC_ESIGNET_REDIRECT_URI` uses HTTPS and your production domain, and it is registered on the client.
+- [ ] Only the claims the portal needs are requested in `AUTH_CONFIG.CLAIMS` and allowed for the client.
+- [ ] All `ESIGNET_*` URLs point at the same eSignet instance as `NEXT_PUBLIC_ESIGNET_AUTHORIZE_URL`.
+- [ ] Key rotation plan: generate a new key pair, register the new public key (Option 1: through the CredIssuer team; Option 2: on your eSignet client), then switch `ESIGNET_CLIENT_PRIVATE_KEY`.
+- [ ] The portal stores the citizen profile in the browser's `localStorage`. For production, consider a server-side session (HTTP-only cookie) instead.
